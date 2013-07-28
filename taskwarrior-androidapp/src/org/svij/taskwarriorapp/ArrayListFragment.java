@@ -34,32 +34,98 @@ import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.UUID;
 
-import org.svij.taskwarriorapp.TaskAddActivity.UnsavedDataDialogFragment;
 import org.svij.taskwarriorapp.data.Task;
 import org.svij.taskwarriorapp.db.TaskBaseAdapter;
 import org.svij.taskwarriorapp.db.TaskDataSource;
 
 import android.app.AlertDialog;
-import android.app.Dialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.v4.app.DialogFragment;
-import android.support.v4.app.NavUtils;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
+import android.widget.AdapterView.OnItemLongClickListener;
 import android.widget.ListView;
 import android.widget.Toast;
 
 import com.actionbarsherlock.app.SherlockListFragment;
+import com.actionbarsherlock.view.ActionMode;
+import com.actionbarsherlock.view.ActionMode.Callback;
+import com.actionbarsherlock.view.Menu;
+import com.actionbarsherlock.view.MenuInflater;
+import com.actionbarsherlock.view.MenuItem;
 
 public class ArrayListFragment extends SherlockListFragment {
 
-	TaskDataSource datasource;
+	private TaskDataSource datasource;
 	private long selectedItemId = -1;
+	private ArrayList<Long> selectedItems;
 	private String column;
-	TaskBaseAdapter adapter = null;
+	private TaskBaseAdapter adapter = null;
+	private ActionMode actionMode = null;
+	private boolean inEditMode = false;
+	private int selectedViewPosition = -1;
+
+	private ActionMode.Callback actionModeCallbacks = new Callback() {
+
+		@Override
+		public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+			MenuInflater inflater = mode.getMenuInflater();
+			inflater.inflate(R.menu.context_menu, menu);
+			mode.setTitle(getString(R.string.task_selected, 1));
+			return true;
+		}
+
+		@Override
+		public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+			// nothing to see here, move along
+			return false;
+		}
+
+		@Override
+		public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+			switch (item.getItemId()) {
+			case R.id.context_menu_delete_task:
+				for (long clickedItem : selectedItems) {
+					deleteTask(getTaskWithId(clickedItem));
+				}
+				selectedItems.clear();
+				mode.finish();
+				return true;
+			case R.id.context_menu_done_task:
+				for (long clickedItem : selectedItems) {
+					doneTask(getTaskWithId(clickedItem));
+				}
+				selectedItems.clear();
+				mode.finish();
+				return true;
+			default:
+				return false;
+			}
+		}
+
+		@Override
+		public void onDestroyActionMode(ActionMode mode) {
+			finishEditMode();
+		}
+
+		private void deleteTask(UUID uuid) {
+			datasource.deleteTask(uuid);
+			setListView();
+		}
+
+		private void doneTask(UUID uuid) {
+			datasource.doneTask(uuid);
+			setListView();
+		}
+
+		private UUID getTaskWithId(long selectedItemId) {
+			return ((Task) getListAdapter().getItem((int) selectedItemId - 1))
+					.getUuid();
+		}
+
+	};
 
 	@Override
 	public void onActivityCreated(Bundle savedInstanceState) {
@@ -78,6 +144,61 @@ public class ArrayListFragment extends SherlockListFragment {
 				adapter.changeTaskRow(position);
 			}
 		});
+
+		selectedItems = new ArrayList<Long>();
+
+		listview.setOnItemLongClickListener(new OnItemLongClickListener() {
+
+			@Override
+			public boolean onItemLongClick(AdapterView<?> parent, View view,
+					int position, long id) {
+				inEditMode = true;
+				selectedItemId = id + 1;
+				selectedItems.add(selectedItemId);
+
+				// Start the CAB using the ActionMode.Callback defined
+				// above
+				setActionMode(getSherlockActivity().startActionMode(
+						actionModeCallbacks));
+				selectLongItemClick(position);
+				return true;
+			}
+		});
+
+	}
+
+	public ActionMode getActionMode() {
+		return actionMode;
+	}
+
+	public void setActionMode(ActionMode actionMode) {
+		this.actionMode = actionMode;
+	}
+
+	public void finishEditMode() {
+		inEditMode = false;
+		setActionMode(null);
+		for (long items: selectedItems) {
+			deselectSelectedItems((int) items);
+		}
+	}
+
+	private void selectLongItemClick(int position) {
+		ListView lv = getListView();
+		lv.setItemChecked(position, true);
+		View v = lv.getChildAt(position - lv.getFirstVisiblePosition());
+		v.setSelected(true);
+		v.setBackgroundColor(getResources().getColor(R.color.task_blue));
+		selectedViewPosition = position;
+	}
+
+	private void deselectSelectedItems(int position) {
+		ListView lv = getListView();
+		lv.setItemChecked(position, false);
+		View v = lv.getChildAt(position - lv.getFirstVisiblePosition());
+		v.setSelected(false);
+		v.setBackgroundColor(getResources().getColor(R.color.md__transparent));
+		v.setBackgroundDrawable(getResources().getDrawable(R.drawable.inset_background));
 	}
 
 	public void setListView() {
